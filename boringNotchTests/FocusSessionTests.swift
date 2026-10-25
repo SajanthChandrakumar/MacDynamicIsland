@@ -106,6 +106,35 @@ final class FocusSessionTests: XCTestCase {
         XCTAssertEqual(session.task?.listName, "Work")
     }
 
+    func testDetachingReminderAtOrAfterDeadlineCompletesAndRestores() throws {
+        let settings = FocusSettings(workMinutes: 1, shortBreakMinutes: 5, longBreakMinutes: 15, longBreakInterval: 4)
+
+        for elapsed in [60.0, 61.0] {
+            let task = FocusTask(title: "Review draft", reminderID: "reminder-1", listName: "Work")
+            var session = FocusSession.start(mode: .pomodoro, minutes: 1, settings: settings, task: task, at: start)
+
+            session.detachReminder(at: start.addingTimeInterval(elapsed))
+
+            XCTAssertEqual(session.status, .completed)
+            XCTAssertEqual(session.completedWorkSessions, 1)
+            XCTAssertNil(session.task?.reminderID)
+
+            var restored = try JSONDecoder().decode(FocusSession.self, from: JSONEncoder().encode(session))
+            XCTAssertEqual(restored.status, .completed)
+            XCTAssertEqual(restored.completedWorkSessions, 1)
+            XCTAssertEqual(restored.nextPhase, .shortBreak)
+            restored.resume(at: start.addingTimeInterval(10_000))
+            XCTAssertEqual(restored.status, .completed)
+            restored.advancePhase(at: start.addingTimeInterval(10_000))
+            XCTAssertEqual(restored.phase, .shortBreak)
+            XCTAssertEqual(restored.status, .running)
+            XCTAssertEqual(restored.remaining(at: start.addingTimeInterval(10_000)), 300, accuracy: 0.001)
+
+            session.detachReminder(at: start.addingTimeInterval(elapsed + 60))
+            XCTAssertEqual(session.completedWorkSessions, 1)
+        }
+    }
+
     func testCountdownCompletionStaysCompletedUntilEnded() {
         var session = FocusSession.start(mode: .countdown, minutes: 1, at: start)
         session.tick(at: start.addingTimeInterval(61))

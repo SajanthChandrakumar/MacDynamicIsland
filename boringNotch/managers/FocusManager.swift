@@ -95,9 +95,14 @@ final class FocusManager: ObservableObject {
 
     func markReminderCompleted() {
         guard session.task?.reminderID != nil else { return }
+        let wasRunning = session.status == .running
         session.detachReminder(at: Date())
         remainingSeconds = Self.displaySeconds(session.remaining())
-        persistSession()
+        if wasRunning, session.status == .completed {
+            finishPhase()
+        } else {
+            persistSession()
+        }
     }
 
     private func observeSleep() {

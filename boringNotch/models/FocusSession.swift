@@ -176,7 +176,12 @@ struct FocusSession: Codable, Equatable {
 
     mutating func checkpoint(at date: Date) {
         guard status == .running else { return }
-        checkpointSeconds = remaining(at: date)
+        let remaining = remaining(at: date)
+        guard remaining > 0 else {
+            completePhase()
+            return
+        }
+        checkpointSeconds = remaining
         anchorDate = date
     }
 
