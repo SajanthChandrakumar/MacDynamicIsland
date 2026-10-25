@@ -14,6 +14,24 @@ protocol CalendarServiceProviding {
     func requestAccess(to type: EKEntityType) async throws -> Bool
     func calendars() async -> [CalendarModel]
     func events(from start: Date, to end: Date, calendars: [String]) async -> [EventModel]
+    func focusReminders(in calendars: [String]) async -> [FocusTask]
+    func setReminderCompleted(reminderID: String, completed: Bool) async throws
+}
+
+enum ReminderCompletionError: LocalizedError {
+    case accessDenied
+    case notFound
+    case notWritable
+    case saveFailed(Error)
+
+    var errorDescription: String? {
+        switch self {
+        case .accessDenied: return "Reminders access is unavailable."
+        case .notFound: return "The reminder is no longer available."
+        case .notWritable: return "This reminder list does not allow changes."
+        case .saveFailed(let error): return "The reminder could not be saved: \(error.localizedDescription)"
+        }
+    }
 }
 
 class CalendarService: CalendarServiceProviding {
@@ -80,6 +98,26 @@ class CalendarService: CalendarServiceProviding {
         
         return events.sorted { $0.start < $1.start }
     }
+
+    func focusReminders(in calendarIDs: [String]) async -> [FocusTask] {
+        guard hasAccess(to: .reminder), !calendarIDs.isEmpty else { return [] }
+        let selectedCalendars = matchingReminderCalendars(
+            from: store.calendars(for: .reminder),
+            selectedIDs: calendarIDs
+        )
+        guard !selectedCalendars.isEmpty else { return [] }
+
+        let predicate = store.predicateForIncompleteReminders(
+            withDueDateStarting: nil,
+            ending: nil,
+            calendars: selectedCalendars
+        )
+        return await withCheckedContinuation { continuation in
+            store.fetchReminders(matching: predicate) { reminders in
+                continuation.resume(returning: FocusTask.fromReminders(reminders ?? []))
+            }
+        }
+    }
     
     private func fetchReminders(from start: Date, to end: Date, calendars: [EKCalendar]) async -> [EventModel] {
         return await withCheckedContinuation { continuation in
@@ -107,13 +145,19 @@ class CalendarService: CalendarServiceProviding {
         }
     }
     
-    func setReminderCompleted(reminderID: String, completed: Bool) async {
-        guard let reminder = store.calendarItem(withIdentifier: reminderID) as? EKReminder else { return }
+    func setReminderCompleted(reminderID: String, completed: Bool) async throws {
+        guard hasAccess(to: .reminder) else { throw ReminderCompletionError.accessDenied }
+        guard let reminder = store.calendarItem(withIdentifier: reminderID) as? EKReminder else {
+            throw ReminderCompletionError.notFound
+        }
+        guard let calendar = reminder.calendar, calendar.allowsContentModifications else {
+            throw ReminderCompletionError.notWritable
+        }
         reminder.isCompleted = completed
         do {
             try store.save(reminder, commit: true)
         } catch {
-            print("Failed to update reminder completion: \(error)")
+            throw ReminderCompletionError.saveFailed(error)
         }
     }
 }

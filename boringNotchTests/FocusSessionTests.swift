@@ -1,4 +1,5 @@
 import Foundation
+import EventKit
 import XCTest
 
 final class FocusSessionTests: XCTestCase {
@@ -155,5 +156,45 @@ final class FocusSessionTests: XCTestCase {
         XCTAssertEqual(settings.shortBreakMinutes, 1)
         XCTAssertEqual(settings.longBreakMinutes, 180)
         XCTAssertEqual(settings.longBreakInterval, 1)
+    }
+
+    func testFocusReminderMappingSortsDueFirstAndKeepsUndatedIncompleteTasks() {
+        let dueDate = Date(timeIntervalSince1970: 1_800_000_000)
+        let dueB = makeReminder(title: "Due B", due: dueDate.addingTimeInterval(86_400))
+        let dueZ = makeReminder(title: "Due Z", due: dueDate)
+        let dueA = makeReminder(title: "Due A", due: dueDate)
+        let undatedB = makeReminder(title: "Undated B")
+        let undatedA = makeReminder(title: "Undated A")
+        let completed = makeReminder(title: "Completed", due: dueDate, completed: true)
+
+        let tasks = FocusTask.fromReminders([undatedB, completed, dueB, dueZ, undatedA, dueA])
+
+        XCTAssertEqual(tasks.map(\.title), ["Due A", "Due B", "Due Z", "Undated A", "Undated B"])
+        XCTAssertEqual(tasks.map(\.reminderID), [dueA, dueB, dueZ, undatedA, undatedB].map(\.calendarItemIdentifier))
+        XCTAssertEqual(tasks.map(\.listName), Array(repeating: "Focus tests", count: 5))
+        XCTAssertEqual(FocusTask.fromReminders([dueA]).first?.reminderID, tasks[0].reminderID)
+    }
+
+    func testEmptyReminderCalendarSelectionDoesNotSelectEveryList() {
+        let calendar = EKCalendar(for: .reminder, eventStore: reminderStore)
+
+        XCTAssertTrue(matchingReminderCalendars(from: [calendar], selectedIDs: []).isEmpty)
+    }
+
+    private let reminderStore = EKEventStore()
+
+    private func makeReminder(title: String, due: Date? = nil, completed: Bool = false) -> EKReminder {
+        let reminder = EKReminder(eventStore: reminderStore)
+        reminder.title = title
+        reminder.isCompleted = completed
+        if let due {
+            var components = Calendar.current.dateComponents([.year, .month, .day], from: due)
+            components.calendar = Calendar.current
+            reminder.dueDateComponents = components
+        }
+        let calendar = EKCalendar(for: .reminder, eventStore: reminderStore)
+        calendar.title = "Focus tests"
+        reminder.calendar = calendar
+        return reminder
     }
 }
