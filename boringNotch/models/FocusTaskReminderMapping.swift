@@ -6,6 +6,11 @@ func matchingReminderCalendars(from calendars: [EKCalendar], selectedIDs: [Strin
     return calendars.filter { selectedIDs.contains($0.calendarIdentifier) }
 }
 
+func reminderBelongsToSelectedList(_ reminder: EKReminder, selectedIDs: [String]) -> Bool {
+    guard !selectedIDs.isEmpty, let calendar = reminder.calendar else { return false }
+    return selectedIDs.contains(calendar.calendarIdentifier)
+}
+
 extension FocusTask {
     static func fromReminders(_ reminders: [EKReminder]) -> [FocusTask] {
         reminders

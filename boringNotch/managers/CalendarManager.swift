@@ -30,6 +30,7 @@ class CalendarManager: ObservableObject {
     private let calendarService = CalendarService()
     private var focusReminderLoadRequested = false
     private var focusReminderRequestID = 0
+    private var focusReminderLoadGeneration = 0
 
     private var eventStoreChangedObserver: NSObjectProtocol?
 
@@ -180,6 +181,9 @@ class CalendarManager: ObservableObject {
 
         Defaults[.calendarSelectionState] = selectionState
         updateSelectedCalendars()
+        focusReminderRequestID += 1
+        focusReminders = []
+        focusRemindersError = nil
         await updateEvents()
         await refreshLoadedFocusReminders()
     }
@@ -204,19 +208,28 @@ class CalendarManager: ObservableObject {
     }
 
     func loadFocusReminders() async {
+        focusReminderLoadGeneration += 1
+        let loadGeneration = focusReminderLoadGeneration
+        focusReminderRequestID += 1
         focusReminderLoadRequested = true
         focusRemindersLoading = true
         focusRemindersError = nil
-        defer { focusRemindersLoading = false }
+        defer {
+            if loadGeneration == focusReminderLoadGeneration {
+                focusRemindersLoading = false
+            }
+        }
 
         let status = EKEventStore.authorizationStatus(for: .reminder)
         reminderAuthorizationStatus = status
         if status == .notDetermined {
             do {
                 let granted = try await calendarService.requestAccess(to: .reminder)
+                guard loadGeneration == focusReminderLoadGeneration else { return }
                 let updatedStatus = EKEventStore.authorizationStatus(for: .reminder)
                 reminderAuthorizationStatus = updatedStatus == .notDetermined ? (granted ? .fullAccess : .denied) : updatedStatus
             } catch {
+                guard loadGeneration == focusReminderLoadGeneration else { return }
                 reminderAuthorizationStatus = EKEventStore.authorizationStatus(for: .reminder)
                 focusReminders = []
                 focusRemindersError = error.localizedDescription
@@ -226,6 +239,7 @@ class CalendarManager: ObservableObject {
         }
 
         await reloadCalendarAndReminderLists()
+        guard loadGeneration == focusReminderLoadGeneration else { return }
         guard hasReminderReadAccess(reminderAuthorizationStatus) else {
             focusReminders = []
             focusRemindersError = "Reminders access is required to choose a reminder."
@@ -274,7 +288,11 @@ class CalendarManager: ObservableObject {
     }
 
     func completeFocusReminder(id: String) async throws {
-        try await calendarService.setReminderCompleted(reminderID: id, completed: true)
+        try calendarService.setReminderCompleted(
+            reminderID: id,
+            completed: true,
+            selectedCalendarIDs: reminderLists.filter { selectedCalendarIDs.contains($0.id) }.map(\.id)
+        )
         focusReminderLoadRequested = true
         await reloadCalendarAndReminderLists()
         await refreshFocusReminders()

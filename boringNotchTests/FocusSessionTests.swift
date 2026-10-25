@@ -181,6 +181,15 @@ final class FocusSessionTests: XCTestCase {
         XCTAssertTrue(matchingReminderCalendars(from: [calendar], selectedIDs: []).isEmpty)
     }
 
+    func testFocusCompletionRequiresReminderListToRemainSelected() {
+        let reminder = makeReminder(title: "Review draft")
+        let calendarID = reminder.calendar!.calendarIdentifier
+
+        XCTAssertTrue(reminderBelongsToSelectedList(reminder, selectedIDs: [calendarID]))
+        XCTAssertFalse(reminderBelongsToSelectedList(reminder, selectedIDs: []))
+        XCTAssertFalse(reminderBelongsToSelectedList(reminder, selectedIDs: ["different-list"]))
+    }
+
     private let reminderStore = EKEventStore()
 
     private func makeReminder(title: String, due: Date? = nil, completed: Bool = false) -> EKReminder {

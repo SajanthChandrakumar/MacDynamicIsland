@@ -21,6 +21,7 @@ protocol CalendarServiceProviding {
 enum ReminderCompletionError: LocalizedError {
     case accessDenied
     case notFound
+    case notSelected
     case notWritable
     case saveFailed(Error)
 
@@ -28,6 +29,7 @@ enum ReminderCompletionError: LocalizedError {
         switch self {
         case .accessDenied: return "Reminders access is unavailable."
         case .notFound: return "The reminder is no longer available."
+        case .notSelected: return "The reminder is no longer in a selected list."
         case .notWritable: return "This reminder list does not allow changes."
         case .saveFailed(let error): return "The reminder could not be saved: \(error.localizedDescription)"
         }
@@ -146,13 +148,24 @@ class CalendarService: CalendarServiceProviding {
     }
     
     func setReminderCompleted(reminderID: String, completed: Bool) async throws {
+        try saveReminderCompletion(reminderID: reminderID, completed: completed, selectedCalendarIDs: nil)
+    }
+
+    @MainActor
+    func setReminderCompleted(reminderID: String, completed: Bool, selectedCalendarIDs: [String]) throws {
+        try saveReminderCompletion(reminderID: reminderID, completed: completed, selectedCalendarIDs: selectedCalendarIDs)
+    }
+
+    private func saveReminderCompletion(reminderID: String, completed: Bool, selectedCalendarIDs: [String]?) throws {
         guard hasAccess(to: .reminder) else { throw ReminderCompletionError.accessDenied }
         guard let reminder = store.calendarItem(withIdentifier: reminderID) as? EKReminder else {
             throw ReminderCompletionError.notFound
         }
-        guard let calendar = reminder.calendar, calendar.allowsContentModifications else {
-            throw ReminderCompletionError.notWritable
+        guard let calendar = reminder.calendar else { throw ReminderCompletionError.notWritable }
+        if let selectedCalendarIDs, !reminderBelongsToSelectedList(reminder, selectedIDs: selectedCalendarIDs) {
+            throw ReminderCompletionError.notSelected
         }
+        guard calendar.allowsContentModifications else { throw ReminderCompletionError.notWritable }
         reminder.isCompleted = completed
         do {
             try store.save(reminder, commit: true)
