@@ -25,10 +25,12 @@ final class FocusManager: ObservableObject {
     private init() {
         let storedSettings = Defaults[.focusSettings].flatMap { try? JSONDecoder().decode(FocusSettings.self, from: $0) } ?? .standard
         let restoredSession = Defaults[.focusSession].flatMap { try? JSONDecoder().decode(FocusSession.self, from: $0) }
+        let initialSettings = storedSettings.sanitized
+        let initialSession = restoredSession ?? FocusSession(settings: initialSettings)
 
-        settings = storedSettings.sanitized
-        session = restoredSession ?? FocusSession(settings: settings)
-        remainingSeconds = Self.displaySeconds(session.remaining())
+        settings = initialSettings
+        session = initialSession
+        remainingSeconds = Self.displaySeconds(initialSession.remaining())
         observeSleep()
     }
 
