@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		51D3F0C07A2CE94000F00002 /* FocusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51D3F0C07A2CE94000F00001 /* FocusView.swift */; };
 		F0C057A1000000000000000D /* FocusSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0C057A10000000000000004 /* FocusSessionTests.swift */; };
 		F0C057A1000000000000000E /* FocusSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0C057A10000000000000001 /* FocusSession.swift */; };
 		F0C057A1000000000000000F /* FocusSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0C057A10000000000000001 /* FocusSession.swift */; };
@@ -188,6 +189,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		51D3F0C07A2CE94000F00001 /* FocusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusView.swift; sourceTree = "<group>"; };
 		1100290B2E847E2800035A57 /* NSItemProvider+LoadHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NSItemProvider+LoadHelpers.swift"; sourceTree = "<group>"; };
 		110029262E84FD4C00035A57 /* TemporaryFileStorageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TemporaryFileStorageService.swift; sourceTree = "<group>"; };
 		110029292E8691B400035A57 /* FileShareView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileShareView.swift; sourceTree = "<group>"; };
@@ -507,6 +509,7 @@
 		1471639B2C5D362F0068B555 /* components */ = {
 			isa = PBXGroup;
 			children = (
+				51D3F0C07A2CE94000F00003 /* Focus */,
 				B141C23B2CA5F50900AC8CC8 /* Onboarding */,
 				B1C448992C97375A001F0858 /* Tips */,
 				14C08BB72C8DE49E000F8AA0 /* Calendar */,
@@ -526,6 +529,14 @@
 				B1F747F82EC7E94000F841DB /* LottieView.swift */,
 			);
 			path = components;
+			sourceTree = "<group>";
+		};
+		51D3F0C07A2CE94000F00003 /* Focus */ = {
+			isa = PBXGroup;
+			children = (
+				51D3F0C07A2CE94000F00001 /* FocusView.swift */,
+			);
+			path = Focus;
 			sourceTree = "<group>";
 		};
 		147163B52C5D804B0068B555 /* managers */ = {
@@ -970,6 +981,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				51D3F0C07A2CE94000F00002 /* FocusView.swift in Sources */,
 				F0C057A1000000000000000E /* FocusSession.swift in Sources */,
 				F0C057A10000000000000011 /* FocusTaskReminderMapping.swift in Sources */,
 				F0C057A10000000000000010 /* FocusManager.swift in Sources */,

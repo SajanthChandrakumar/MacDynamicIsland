@@ -19,6 +19,7 @@ struct ContentView: View {
     @ObservedObject var webcamManager = WebcamManager.shared
 
     @ObservedObject var coordinator = BoringViewCoordinator.shared
+    @ObservedObject var focusManager = FocusManager.shared
     @ObservedObject var musicManager = MusicManager.shared
     @ObservedObject var batteryModel = BatteryStatusViewModel.shared
     @ObservedObject var brightnessManager = BrightnessManager.shared
@@ -36,6 +37,7 @@ struct ContentView: View {
     @Default(.useMusicVisualizer) var useMusicVisualizer
 
     @Default(.showNotHumanFace) var showNotHumanFace
+    @Default(.boringShelf) var shelfEnabled
 
     // Shared interactive spring for movement/resizing to avoid conflicting animations
     private let animationSpring = Animation.interactiveSpring(response: 0.38, dampingFraction: 0.8, blendDuration: 0)
@@ -65,9 +67,11 @@ struct ContentView: View {
             && vm.notchState == .closed && Defaults[.showPowerStatusNotifications]
         {
             chinWidth = 640
-        } else if (!coordinator.expandingView.show || coordinator.expandingView.type == .music)
-            && vm.notchState == .closed && (musicManager.isPlaying || !musicManager.isPlayerIdle)
-            && coordinator.musicLiveActivityEnabled && !vm.hideOnClosed
+        } else if focusManager.session.status != .idle
+            && vm.notchState == .closed && !vm.hideOnClosed
+        {
+            chinWidth += (2 * max(0, vm.effectiveClosedNotchHeight - 12) + 20)
+        } else if shouldShowClosedMusicLiveActivity
         {
             chinWidth += (2 * max(0, vm.effectiveClosedNotchHeight - 12) + 20)
         } else if !coordinator.expandingView.show && vm.notchState == .closed
@@ -78,6 +82,14 @@ struct ContentView: View {
         }
 
         return chinWidth
+    }
+
+    private var shouldShowClosedMusicLiveActivity: Bool {
+        (!coordinator.expandingView.show || coordinator.expandingView.type == .music)
+            && vm.notchState == .closed
+            && (musicManager.isPlaying || !musicManager.isPlayerIdle)
+            && coordinator.musicLiveActivityEnabled
+            && !vm.hideOnClosed
     }
 
     var body: some View {
@@ -167,6 +179,16 @@ struct ContentView: View {
                             }
                         }
                     }
+                    .onChange(of: coordinator.currentView) { _, view in
+                        if view != .focus {
+                            vm.endFocusInteraction()
+                        }
+                    }
+                    .onChange(of: shelfEnabled) { _, enabled in
+                        if !enabled && coordinator.currentView == .shelf {
+                            coordinator.currentView = .home
+                        }
+                    }
                     .onChange(of: vm.isBatteryPopoverActive) {
                         if !vm.isBatteryPopoverActive && !isHovering && vm.notchState == .open && !SharingStateManager.shared.preventNotchClose {
                             hoverTask?.cancel()
@@ -219,7 +241,7 @@ struct ContentView: View {
 
             if isTargeted {
                 if vm.notchState == .closed {
-                    coordinator.currentView = .shelf
+                    coordinator.currentView = Defaults[.boringShelf] ? .shelf : .home
                     doOpen()
                 }
                 return
@@ -287,7 +309,26 @@ struct ContentView: View {
                       } else if coordinator.sneakPeek.show && Defaults[.inlineHUD] && (coordinator.sneakPeek.type != .music) && (coordinator.sneakPeek.type != .battery) && vm.notchState == .closed {
                           InlineHUD(type: $coordinator.sneakPeek.type, value: $coordinator.sneakPeek.value, icon: $coordinator.sneakPeek.icon, hoverAnimation: $isHovering, gestureProgress: $gestureProgress)
                               .transition(.opacity)
-                      } else if (!coordinator.expandingView.show || coordinator.expandingView.type == .music) && vm.notchState == .closed && (musicManager.isPlaying || !musicManager.isPlayerIdle) && coordinator.musicLiveActivityEnabled && !vm.hideOnClosed {
+                      } else if focusManager.session.status != .idle
+                          && vm.notchState == .closed && !vm.hideOnClosed
+                          && (!coordinator.sneakPeek.show || coordinator.sneakPeek.type == .music)
+                      {
+                          let leftWidth = max(53, vm.effectiveClosedNotchHeight - 12)
+                          let rightWidth = max(22, vm.effectiveClosedNotchHeight - 12)
+                          FocusClosedActivity(
+                              remainingSeconds: focusManager.remainingSeconds,
+                              completionNoticeVisible: focusManager.completionNoticeVisible,
+                              musicCover: musicManager.albumArt,
+                              showsMusicCover: shouldShowClosedMusicLiveActivity,
+                              leftWidth: leftWidth,
+                              centerWidth: max(0, vm.closedNotchSize.width - leftWidth - rightWidth),
+                              rightWidth: rightWidth,
+                              onOpenFocus: {
+                                  coordinator.currentView = .focus
+                                  doOpen()
+                              }
+                          )
+                      } else if shouldShowClosedMusicLiveActivity {
                           MusicLiveActivity()
                               .frame(alignment: .center)
                       } else if !coordinator.expandingView.show && vm.notchState == .closed && (!musicManager.isPlaying && musicManager.isPlayerIdle) && Defaults[.showNotHumanFace] && !vm.hideOnClosed  {
@@ -349,6 +390,8 @@ struct ContentView: View {
                         NotchHomeView(albumArtNamespace: albumArtNamespace)
                     case .shelf:
                         ShelfView()
+                    case .focus:
+                        FocusView()
                     }
                 }
                 .transition(

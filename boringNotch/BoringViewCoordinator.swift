@@ -65,7 +65,7 @@ class BoringViewCoordinator: ObservableObject {
         didSet {
             if !alwaysShowTabs {
                 openLastTabByDefault = false
-                if ShelfStateViewModel.shared.isEmpty || !Defaults[.openShelfByDefault] {
+                if !Defaults[.boringShelf] || ShelfStateViewModel.shared.isEmpty || !Defaults[.openShelfByDefault] {
                     currentView = .home
                 }
             }

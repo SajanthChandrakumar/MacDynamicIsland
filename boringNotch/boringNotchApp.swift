@@ -91,6 +91,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor
     func onScreenLocked(_ notification: Notification) {
         isScreenLocked = true
+        FocusManager.shared.pause()
+        vm.forceClose()
+        viewModels.values.forEach { $0.forceClose() }
         if !Defaults[.showOnLockScreen] {
             cleanupWindows()
         } else {
@@ -148,6 +151,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let shouldCleanupMulti = shouldInvert ? !Defaults[.showOnAllDisplays] : Defaults[.showOnAllDisplays]
         
         if shouldCleanupMulti {
+            viewModels.values.forEach { $0.forceClose() }
             windows.values.forEach { window in
                 window.close()
                 NotchSpaceManager.shared.notchSpace.windows.remove(window)
@@ -155,6 +159,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             windows.removeAll()
             viewModels.removeAll()
         } else if let window = window {
+            vm.forceClose()
             window.close()
             NotchSpaceManager.shared.notchSpace.windows.remove(window)
             if let obs = windowScreenDidChangeObserver {
@@ -224,10 +229,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         if Defaults[.showOnAllDisplays], let viewModel = viewModels[uuid] {
             viewModel.open()
-            coordinator.currentView = .shelf
+            coordinator.currentView = Defaults[.boringShelf] ? .shelf : .home
         } else if !Defaults[.showOnAllDisplays], let windowScreen = window?.screen, screen == windowScreen {
             vm.open()
-            coordinator.currentView = .shelf
+            coordinator.currentView = Defaults[.boringShelf] ? .shelf : .home
         }
     }
 
@@ -248,6 +253,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             rootView: ContentView()
                 .environmentObject(viewModel)
         )
+        viewModel.focusPanel = window
 
         window.orderFrontRegardless()
         NotchSpaceManager.shared.notchSpace.windows.insert(window)
@@ -279,7 +285,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.alphaValue = 1
     }
 
+    @MainActor
     func applicationDidFinishLaunching(_ notification: Notification) {
+        _ = FocusManager.shared
 
         NotificationCenter.default.addObserver(
             self,
@@ -481,6 +489,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // Remove windows for screens that no longer exist
             for uuid in windows.keys where !currentScreenUUIDs.contains(uuid) {
                 if let window = windows[uuid] {
+                    viewModels[uuid]?.forceClose()
                     window.close()
                     NotchSpaceManager.shared.notchSpace.windows.remove(window)
                     windows.removeValue(forKey: uuid)

@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct TabButton: View {
-    let label: String
+    let label: LocalizedStringKey
     let icon: String
     let selected: Bool
     let onClick: () -> Void
@@ -20,6 +20,10 @@ struct TabButton: View {
                 .contentShape(Capsule())
         }
         .buttonStyle(PlainButtonStyle())
+        .accessibilityLabel(Text(label))
+        .accessibilityHint(Text("Switch tabs"))
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .help(label)
     }
 }
 

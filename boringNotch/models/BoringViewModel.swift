@@ -31,8 +31,11 @@ class BoringViewModel: NSObject, ObservableObject {
     @Published var edgeAutoOpenActive: Bool = false
     @Published var isHoveringCalendar: Bool = false
     @Published var isBatteryPopoverActive: Bool = false
+    @Published private(set) var isFocusInteracting = false
 
     @Published var screenUUID: String?
+
+    weak var focusPanel: BoringNotchSkyLightWindow?
 
     @Published var notchSize: CGSize = getClosedNotchSize()
     @Published var closedNotchSize: CGSize = getClosedNotchSize()
@@ -197,9 +200,42 @@ class BoringViewModel: NSObject, ObservableObject {
         MusicManager.shared.forceUpdate()
     }
 
+    func beginFocusInteraction() {
+        guard !isFocusInteracting else { return }
+        isFocusInteracting = true
+        focusPanel?.allowsFocusInteraction = true
+        focusPanel?.makeKey()
+    }
+
+    func endFocusInteraction(retryClose: Bool = true) {
+        guard isFocusInteracting || focusPanel?.allowsFocusInteraction == true else { return }
+        if focusPanel?.isKeyWindow == true {
+            focusPanel?.makeFirstResponder(nil)
+            focusPanel?.resignKey()
+        }
+        focusPanel?.allowsFocusInteraction = false
+        isFocusInteracting = false
+
+        guard retryClose, notchState == .open, !isMouseHovering() else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(100)) { [weak self] in
+            guard let self, !self.isFocusInteracting, !self.isMouseHovering() else { return }
+            self.close()
+        }
+    }
+
     func close() {
+        guard !isFocusInteracting else { return }
+        close(force: false)
+    }
+
+    func forceClose() {
+        endFocusInteraction(retryClose: false)
+        close(force: true)
+    }
+
+    private func close(force: Bool) {
         // Do not close while a share picker or sharing service is active
-        if SharingStateManager.shared.preventNotchClose {
+        if !force && SharingStateManager.shared.preventNotchClose {
             return
         }
         self.notchSize = getClosedNotchSize(screenUUID: self.screenUUID)
@@ -211,7 +247,7 @@ class BoringViewModel: NSObject, ObservableObject {
 
         // Set the current view to shelf if it contains files and the user enables openShelfByDefault
         // Otherwise, if the user has not enabled openLastShelfByDefault, set the view to home
-    if !ShelfStateViewModel.shared.isEmpty && Defaults[.openShelfByDefault] {
+        if Defaults[.boringShelf] && !ShelfStateViewModel.shared.isEmpty && Defaults[.openShelfByDefault] {
             coordinator.currentView = .shelf
         } else if !coordinator.openLastTabByDefault {
             coordinator.currentView = .home

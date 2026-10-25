@@ -39,6 +39,9 @@ struct SettingsView: View {
                 NavigationLink(value: "Calendar") {
                     Label("Calendar", systemImage: "calendar")
                 }
+                NavigationLink(value: "Focus") {
+                    Label("Focus", systemImage: "timer")
+                }
                 NavigationLink(value: "HUD") {
                     Label("HUDs", systemImage: "dial.medium.fill")
                 }
@@ -79,6 +82,8 @@ struct SettingsView: View {
                     Media()
                 case "Calendar":
                     CalendarSettings()
+                case "Focus":
+                    FocusPreferencesView()
                 case "HUD":
                     HUD()
                 case "Battery":
@@ -906,6 +911,35 @@ struct About: View {
             CheckForUpdatesView(updater: updaterController.updater)
         }
         .navigationTitle("About")
+    }
+}
+
+@MainActor
+struct FocusPreferencesView: View {
+    @ObservedObject private var manager = FocusManager.shared
+
+    var body: some View {
+        Form {
+            Section {
+                Stepper(value: $manager.settings.workMinutes, in: 1...180) {
+                    Text("Work duration: \(manager.settings.workMinutes) min")
+                }
+                Stepper(value: $manager.settings.shortBreakMinutes, in: 1...180) {
+                    Text("Short break: \(manager.settings.shortBreakMinutes) min")
+                }
+                Stepper(value: $manager.settings.longBreakMinutes, in: 1...180) {
+                    Text("Long break: \(manager.settings.longBreakMinutes) min")
+                }
+                Stepper(value: $manager.settings.longBreakInterval, in: 1...12) {
+                    Text("Long break after \(manager.settings.longBreakInterval) work sessions")
+                }
+            } header: {
+                Text("Pomodoro")
+            } footer: {
+                Text("Changes apply to new focus sessions.")
+            }
+        }
+        .navigationTitle("Focus")
     }
 }
 
