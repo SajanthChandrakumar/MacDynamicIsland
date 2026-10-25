@@ -105,7 +105,9 @@ struct FocusView: View {
                 viewModel.beginFocusInteraction()
                 Task {
                     await loadReminders()
-                    guard coordinator.currentView == .focus else { return }
+                    guard coordinator.currentView == .focus,
+                          taskSource == .reminder,
+                          viewModel.isFocusInteracting else { return }
                     showingReminderPicker = true
                 }
             } else {
