@@ -7,6 +7,7 @@
 
 import SwiftUI
 import Defaults
+import Foundation
 
 private let availableDirectories = FileManager
     .default
@@ -199,4 +200,8 @@ extension Defaults.Keys {
     }
 
     static let didClearLegacyURLCacheV1 = Key<Bool>("didClearLegacyURLCache_v1", default: false)
+
+    // MARK: Focus timer
+    static let focusSession = Key<Data?>("focusSession", default: nil)
+    static let focusSettings = Key<Data?>("focusSettings", default: nil)
 }

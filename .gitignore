@@ -48,6 +48,9 @@ build/
 *.xcodeproj/xcuserdata
 *.xcodeproj/project.xcuserdata
 
+# Keep the native Focus session test scheme in source control.
+!boringNotch.xcodeproj/xcshareddata/xcschemes/FocusSessionTests.xcscheme
+
 # Build artifacts
 *.ipa
 *.xcarchive
