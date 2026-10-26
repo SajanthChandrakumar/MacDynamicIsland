@@ -67,38 +67,24 @@ struct FocusView: View {
             || calendarManager.reminderAuthorizationStatus == .writeOnly
     }
 
+    private var displayedSeconds: Int {
+        guard focusManager.session.status == .idle else { return focusManager.remainingSeconds }
+        let minutes = draftMode == .pomodoro ? focusManager.settings.workMinutes : draftMinutes
+        return minutes * 60
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack {
-                Text("Focus")
-                    .font(.headline)
-                    .foregroundStyle(.white)
+        HStack(alignment: .center, spacing: 16) {
+            setupColumn
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-                Spacer()
-
-                Picker("Focus mode", selection: $draftMode) {
-                    Text("Countdown").tag(FocusMode.countdown)
-                    Text("Pomodoro").tag(FocusMode.pomodoro)
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 220)
-                .disabled(!canEditSetup)
-            }
-
-            HStack(alignment: .center, spacing: 24) {
-                setupColumn
-                    .frame(width: 290, alignment: .leading)
-
-                Spacer(minLength: 0)
-
-                timerColumn
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-            }
+            timerColumn
+                .frame(maxWidth: 180, alignment: .trailing)
+                .layoutPriority(1)
         }
-        .padding(.horizontal, 28)
-        .padding(.top, 9)
-        .padding(.bottom, 6)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onChange(of: taskSource) { _, source in
             reminderCompletionError = nil
             if source == .reminder {
@@ -151,31 +137,43 @@ struct FocusView: View {
 
     @ViewBuilder
     private var setupColumn: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 6) {
             if canEditSetup {
-                HStack(spacing: 8) {
-                    Text("Duration")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    Spacer()
+                HStack(spacing: 7) {
                     if draftMode == .countdown {
-                        Button("25 min") { draftMinutes = 25 }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
+                        Button("25") { draftMinutes = 25 }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(draftMinutes == 25 ? .primary : .secondary)
                             .accessibilityLabel("25 minutes")
                             .help("25 minutes")
-                        Button("50 min") { draftMinutes = 50 }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
+                        Button("50") { draftMinutes = 50 }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(draftMinutes == 50 ? .primary : .secondary)
                             .accessibilityLabel("50 minutes")
                             .help("50 minutes")
+
                         Stepper("\(draftMinutes) min", value: $draftMinutes, in: 1...180)
+                            .accessibilityLabel("Custom duration: \(draftMinutes) minutes")
+                            .help("Adjust duration from 1 to 180 minutes")
                             .fixedSize()
                     } else {
                         Text("\(focusManager.settings.workMinutes) min work")
                             .font(.subheadline.monospacedDigit())
                             .foregroundStyle(.white)
                     }
+
+                    Spacer(minLength: 4)
+
+                    Picker("Focus mode", selection: $draftMode) {
+                        Text("Countdown").tag(FocusMode.countdown)
+                        Text("Pomodoro").tag(FocusMode.pomodoro)
+                    }
+                    .pickerStyle(.menu)
+                    .menuStyle(.borderlessButton)
+                    .controlSize(.small)
+                    .labelsHidden()
+                    .accessibilityLabel("Focus mode")
+                    .disabled(!canEditSetup)
                 }
 
                 Picker("Task source", selection: $taskSource) {
@@ -183,8 +181,11 @@ struct FocusView: View {
                         Text(source.label).tag(source)
                     }
                 }
-                .pickerStyle(.segmented)
+                .pickerStyle(.menu)
+                .menuStyle(.borderlessButton)
+                .controlSize(.small)
                 .labelsHidden()
+                .accessibilityLabel("Task")
 
                 if taskSource == .title {
                     TextField("Optional task title", text: $draftTitle)
@@ -206,11 +207,12 @@ struct FocusView: View {
                                 Image(systemName: "list.bullet")
                                 Text(selectedReminder?.title ?? String(localized: "Choose reminder"))
                                     .lineLimit(1)
+                                    .truncationMode(.tail)
                                 Image(systemName: "chevron.down")
                                     .font(.caption2)
                             }
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.plain)
                         .accessibilityLabel("Choose reminder")
                         .help("Choose reminder")
 
@@ -222,51 +224,45 @@ struct FocusView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-
-                if focusManager.session.status != .idle {
-                    Text("End the current session to change its task or mode.")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
             } else {
-                HStack(spacing: 6) {
-                    Image(systemName: focusManager.session.task?.reminderID == nil ? "text.alignleft" : "checklist")
-                        .foregroundStyle(.secondary)
-                    Text(focusManager.session.task?.title ?? String(localized: "No task linked"))
-                        .lineLimit(1)
-                    if focusManager.session.task?.reminderID != nil,
-                       reminderChoicesLoaded, !sessionReminderIsAvailable
-                    {
-                        Text("Unavailable")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text(focusManager.session.mode == .pomodoro ? "Pomodoro" : "Countdown")
+                            .foregroundStyle(.secondary)
+                        Image(systemName: focusManager.session.task?.reminderID == nil ? "text.alignleft" : "checklist")
+                            .foregroundStyle(.secondary)
+                        Text(focusManager.session.task?.title ?? String(localized: "No task linked"))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        if focusManager.session.task?.reminderID != nil,
+                           reminderChoicesLoaded, !sessionReminderIsAvailable
+                        {
+                            Text("Unavailable")
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                        }
                     }
-                }
-                .font(.subheadline)
+                    .font(.subheadline)
 
-                if let listName = focusManager.session.task?.listName {
-                    Text(listName)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                } else {
-                    Text("End the current session to change its task or mode.")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                    if let listName = focusManager.session.task?.listName {
+                        Text(listName)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                 }
             }
 
             if let reminderID = focusManager.session.task?.reminderID {
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
                     Button {
                         Task { await completeReminder(id: reminderID) }
                     } label: {
-                        Label(completingReminder ? "Saving…" : "Mark done", systemImage: "checkmark")
+                        Image(systemName: completingReminder ? "hourglass" : "checkmark")
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(completingReminder ? "Saving…" : "Mark done")
+                    .help(completingReminder ? "Saving…" : "Mark done")
                     .disabled(completingReminder || !reminderChoicesLoaded || !sessionReminderIsAvailable)
 
                     if let reminderCompletionError {
@@ -282,9 +278,9 @@ struct FocusView: View {
     }
 
     private var timerColumn: some View {
-        VStack(alignment: .trailing, spacing: 5) {
-            Text(String(format: "%02d:%02d", focusManager.remainingSeconds / 60, focusManager.remainingSeconds % 60))
-                .font(.system(size: 43, weight: .medium, design: .rounded))
+        VStack(alignment: .trailing, spacing: 4) {
+            Text(String(format: "%02d:%02d", displayedSeconds / 60, displayedSeconds % 60))
+                .font(.system(size: 30, weight: .medium, design: .rounded))
                 .monospacedDigit()
                 .foregroundStyle(.white)
                 .contentTransition(.numericText())
@@ -302,65 +298,64 @@ struct FocusView: View {
 
             ProgressView(value: progress)
                 .tint(focusManager.session.status == .completed ? .green : .accentColor)
-                .frame(width: 250)
+                .frame(maxWidth: .infinity)
                 .accessibilityLabel("Focus progress")
 
-            HStack(spacing: 7) {
+            HStack(spacing: 10) {
                 switch focusManager.session.status {
                 case .idle:
                     startButton
                 case .running:
-                    Button {
+                    iconButton("Pause focus timer", systemName: "pause.fill") {
                         focusManager.pause()
-                    } label: {
-                        Label("Pause", systemImage: "pause.fill")
                     }
-                    .help("Pause focus timer")
                 case .paused:
-                    Button {
+                    iconButton("Resume focus timer", systemName: "play.fill") {
                         focusManager.resume()
-                    } label: {
-                        Label("Resume", systemImage: "play.fill")
                     }
-                    .help("Resume focus timer")
                 case .completed:
                     if focusManager.session.mode == .pomodoro {
-                        Button {
+                        iconButton("Start the next Pomodoro phase", systemName: "arrow.right") {
                             focusManager.advancePhase()
-                        } label: {
-                            Label("Next phase", systemImage: "arrow.right")
                         }
-                        .help("Start the next Pomodoro phase")
                     } else {
                         startButton
                     }
                 }
 
                 if focusManager.session.status != .idle {
-                    Button(role: .destructive) {
+                    iconButton("End focus session", systemName: "stop.fill", role: .destructive) {
                         focusManager.stop()
-                    } label: {
-                        Label("End", systemImage: "stop.fill")
                     }
-                    .help("End focus session")
                 }
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
         }
     }
 
     private var startButton: some View {
-        Button {
+        iconButton("Start focus timer", systemName: "play.fill") {
             focusManager.start(
                 mode: draftMode,
                 minutes: draftMode == .pomodoro ? focusManager.settings.workMinutes : draftMinutes,
                 task: newTask
             )
-        } label: {
-            Label("Start", systemImage: "play.fill")
         }
-        .help("Start focus timer")
+    }
+
+    private func iconButton(
+        _ title: LocalizedStringKey,
+        systemName: String,
+        role: ButtonRole? = nil,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(role: role, action: action) {
+            Image(systemName: systemName)
+                .frame(width: 26, height: 26)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(title)
+        .accessibilityLabel(title)
     }
 
     private var progress: Double {
