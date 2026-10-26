@@ -27,6 +27,7 @@ private enum FocusTaskSource: String, CaseIterable {
 @MainActor
 struct FocusView: View {
     @EnvironmentObject private var viewModel: BoringViewModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var focusManager = FocusManager.shared
     @ObservedObject private var calendarManager = CalendarManager.shared
     @ObservedObject private var coordinator = BoringViewCoordinator.shared
@@ -141,22 +142,65 @@ struct FocusView: View {
     }
 
     private var timerTile: some View {
-        VStack(spacing: 5) {
-            Text(String(format: "%02d:%02d", displayedSeconds / 60, displayedSeconds % 60))
-                .font(.system(size: 25, weight: .medium, design: .rounded))
-                .monospacedDigit()
-                .minimumScaleFactor(0.65)
-                .lineLimit(1)
-                .contentTransition(.numericText())
-                .accessibilityLabel("Time remaining")
+        ZStack {
+            Circle()
+                .stroke(Color.secondary.opacity(0.16), lineWidth: 2.5)
+                .overlay {
+                    Circle()
+                        .trim(from: 0, to: progress)
+                        .stroke(style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                        .foregroundStyle(timerProgressTint)
+                        .rotationEffect(.degrees(-90))
+                }
+                .frame(width: 76, height: 76)
+                .accessibilityHidden(true)
 
-            Text(timerCaption)
-                .font(.caption2)
-                .foregroundStyle(focusManager.session.status == .completed ? .green : .secondary)
-                .lineLimit(1)
+            VStack(spacing: 3) {
+                ZStack {
+                    Text(String(format: "%02d:%02d", displayedSeconds / 60, displayedSeconds % 60))
+                        .font(.system(size: 22, weight: .medium, design: .rounded))
+                        .monospacedDigit()
+                        .minimumScaleFactor(0.65)
+                        .lineLimit(1)
+                        .contentTransition(.numericText())
+                        .opacity(focusManager.completionNoticeVisible ? 0 : 1)
+                        .accessibilityLabel("Time remaining")
+
+                    if focusManager.completionNoticeVisible {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 22, weight: .medium))
+                            .foregroundStyle(.green)
+                            .accessibilityHidden(true)
+                    }
+                }
+                .frame(maxWidth: 74)
+
+                HStack(spacing: 3) {
+                    if focusManager.session.status == .running {
+                        Image(systemName: "circle.fill")
+                            .font(.system(size: 4))
+                            .symbolEffect(.pulse, options: .repeating, isActive: !reduceMotion)
+                            .accessibilityHidden(true)
+                    }
+
+                    Text(timerCaption)
+                        .font(.system(size: 11))
+                        .foregroundStyle(focusManager.session.status == .completed ? .green : .secondary)
+                        .lineLimit(1)
+                }
+            }
+            .frame(width: 76)
         }
         .frame(width: 90, height: 90)
         .background(Color(nsColor: .secondarySystemFill), in: RoundedRectangle(cornerRadius: 13))
+    }
+
+    private var timerProgressTint: Color {
+        switch focusManager.session.status {
+        case .paused: .secondary.opacity(0.45)
+        case .completed: .green
+        case .idle, .running: .accentColor
+        }
     }
 
     private var detailsColumn: some View {
