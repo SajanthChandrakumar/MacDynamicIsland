@@ -14,6 +14,14 @@ private enum FocusTaskSource: String, CaseIterable {
         case .reminder: "Reminder"
         }
     }
+
+    var symbol: String {
+        switch self {
+        case .none: "text.alignleft"
+        case .title: "pencil.line"
+        case .reminder: "checklist"
+        }
+    }
 }
 
 @MainActor
@@ -75,12 +83,9 @@ struct FocusView: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 16) {
-            setupColumn
+            timerTile
+            detailsColumn
                 .frame(maxWidth: .infinity, alignment: .leading)
-
-            timerColumn
-                .frame(maxWidth: 180, alignment: .trailing)
-                .layoutPriority(1)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -135,61 +140,56 @@ struct FocusView: View {
         }
     }
 
-    @ViewBuilder
-    private var setupColumn: some View {
-        VStack(alignment: .leading, spacing: 6) {
+    private var timerTile: some View {
+        VStack(spacing: 5) {
+            Text(String(format: "%02d:%02d", displayedSeconds / 60, displayedSeconds % 60))
+                .font(.system(size: 25, weight: .medium, design: .rounded))
+                .monospacedDigit()
+                .minimumScaleFactor(0.65)
+                .lineLimit(1)
+                .contentTransition(.numericText())
+                .accessibilityLabel("Time remaining")
+
+            Text(timerCaption)
+                .font(.caption2)
+                .foregroundStyle(focusManager.session.status == .completed ? .green : .secondary)
+                .lineLimit(1)
+        }
+        .frame(width: 90, height: 90)
+        .background(Color(nsColor: .secondarySystemFill), in: RoundedRectangle(cornerRadius: 13))
+    }
+
+    private var detailsColumn: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            titleRow
+            statusRow
+            if let reminderCompletionError {
+                Text(reminderCompletionError)
+                    .font(.caption2)
+                    .foregroundStyle(.red)
+                    .lineLimit(2)
+            }
+            ProgressView(value: progress)
+                .tint(focusManager.session.status == .completed ? .green : .accentColor)
+                .accessibilityLabel("Focus progress")
+            toolbar
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var titleRow: some View {
+        HStack(spacing: 6) {
             if canEditSetup {
-                HStack(spacing: 7) {
-                    if draftMode == .countdown {
-                        Button("25") { draftMinutes = 25 }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(draftMinutes == 25 ? .primary : .secondary)
-                            .accessibilityLabel("25 minutes")
-                            .help("25 minutes")
-                        Button("50") { draftMinutes = 50 }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(draftMinutes == 50 ? .primary : .secondary)
-                            .accessibilityLabel("50 minutes")
-                            .help("50 minutes")
-
-                        Stepper("\(draftMinutes) min", value: $draftMinutes, in: 1...180)
-                            .accessibilityLabel("Custom duration: \(draftMinutes) minutes")
-                            .help("Adjust duration from 1 to 180 minutes")
-                            .fixedSize()
-                    } else {
-                        Text("\(focusManager.settings.workMinutes) min work")
-                            .font(.subheadline.monospacedDigit())
-                            .foregroundStyle(.white)
-                    }
-
-                    Spacer(minLength: 4)
-
-                    Picker("Focus mode", selection: $draftMode) {
-                        Text("Countdown").tag(FocusMode.countdown)
-                        Text("Pomodoro").tag(FocusMode.pomodoro)
-                    }
-                    .pickerStyle(.menu)
-                    .menuStyle(.borderlessButton)
-                    .controlSize(.small)
-                    .labelsHidden()
-                    .accessibilityLabel("Focus mode")
-                    .disabled(!canEditSetup)
-                }
-
-                Picker("Task source", selection: $taskSource) {
-                    ForEach(FocusTaskSource.allCases, id: \.self) { source in
-                        Text(source.label).tag(source)
-                    }
-                }
-                .pickerStyle(.menu)
-                .menuStyle(.borderlessButton)
-                .controlSize(.small)
-                .labelsHidden()
-                .accessibilityLabel("Task")
-
-                if taskSource == .title {
+                taskSourceMenu
+                switch taskSource {
+                case .none:
+                    Text("Focus session")
+                        .font(.headline)
+                        .lineLimit(1)
+                case .title:
                     TextField("Optional task title", text: $draftTitle)
-                        .textFieldStyle(.roundedBorder)
+                        .textFieldStyle(.plain)
+                        .font(.headline)
                         .focused($titleFieldFocused)
                         .onTapGesture { viewModel.beginFocusInteraction() }
                         .onKeyPress(.escape) {
@@ -197,138 +197,194 @@ struct FocusView: View {
                             viewModel.endFocusInteraction()
                             return .handled
                         }
-                } else if taskSource == .reminder {
-                    HStack(spacing: 6) {
-                        Button {
-                            viewModel.beginFocusInteraction()
-                            showingReminderPicker = true
-                        } label: {
-                            HStack(spacing: 5) {
-                                Image(systemName: "list.bullet")
-                                Text(selectedReminder?.title ?? String(localized: "Choose reminder"))
-                                    .lineLimit(1)
-                                    .truncationMode(.tail)
-                                Image(systemName: "chevron.down")
-                                    .font(.caption2)
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Choose reminder")
-                        .help("Choose reminder")
-
-                        if reminderChoicesLoaded, selectedReminder != nil, !selectedReminderIsAvailable {
-                            Text("Unavailable")
-                                .font(.caption)
-                                .foregroundStyle(.orange)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                case .reminder:
+                    reminderButton
                 }
-            } else {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Text(focusManager.session.mode == .pomodoro ? "Pomodoro" : "Countdown")
-                            .foregroundStyle(.secondary)
-                        Image(systemName: focusManager.session.task?.reminderID == nil ? "text.alignleft" : "checklist")
-                            .foregroundStyle(.secondary)
-                        Text(focusManager.session.task?.title ?? String(localized: "No task linked"))
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                        if focusManager.session.task?.reminderID != nil,
-                           reminderChoicesLoaded, !sessionReminderIsAvailable
-                        {
-                            Text("Unavailable")
-                                .font(.caption)
-                                .foregroundStyle(.orange)
-                        }
-                    }
-                    .font(.subheadline)
 
-                    if let listName = focusManager.session.task?.listName {
-                        Text(listName)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                Spacer(minLength: 4)
+                modePicker
+            } else {
+                Text(focusManager.session.task?.title ?? String(localized: "Focus session"))
+                    .font(.headline)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 4)
+                Text(focusManager.session.mode == .pomodoro
+                    ? String(localized: "Pomodoro")
+                    : String(localized: "Countdown"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+    }
+
+    private var taskSourceMenu: some View {
+        Menu {
+            ForEach(FocusTaskSource.allCases, id: \.self) { source in
+                Button {
+                    taskSource = source
+                } label: {
+                    if taskSource == source {
+                        Label(source.label, systemImage: "checkmark")
+                    } else {
+                        Text(source.label)
                     }
                 }
             }
+        } label: {
+            Image(systemName: taskSource.symbol)
+                .frame(width: 22, height: 24)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .accessibilityLabel("Task source")
+        .accessibilityValue(Text(taskSource.label))
+        .help("Choose task source")
+    }
+
+    private var reminderButton: some View {
+        HStack(spacing: 5) {
+            Button {
+                viewModel.beginFocusInteraction()
+                showingReminderPicker = true
+            } label: {
+                Text(selectedReminder?.title ?? String(localized: "Choose reminder"))
+                    .font(.headline)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Choose reminder")
+            .help("Choose reminder")
+
+        }
+    }
+
+    private var modePicker: some View {
+        Picker("Focus mode", selection: $draftMode) {
+            Text("Countdown").tag(FocusMode.countdown)
+            Text("Pomodoro").tag(FocusMode.pomodoro)
+        }
+        .pickerStyle(.menu)
+        .menuStyle(.borderlessButton)
+        .controlSize(.small)
+        .labelsHidden()
+        .accessibilityLabel("Focus mode")
+        .disabled(!canEditSetup)
+    }
+
+    private var statusRow: some View {
+        HStack(spacing: 6) {
+            Text(statusTitle)
+                .lineLimit(1)
+            if focusManager.session.mode == .pomodoro, focusManager.session.completedWorkSessions > 0 {
+                Text("· \(focusManager.session.completedWorkSessions)")
+            }
+            if let listName = currentListName {
+                Text("· \(listName)")
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            if reminderChoicesLoaded,
+               ((!canEditSetup && focusManager.session.task?.reminderID != nil && !sessionReminderIsAvailable)
+                || (canEditSetup && taskSource == .reminder && selectedReminder != nil && !selectedReminderIsAvailable))
+            {
+                Text("Unavailable")
+                    .foregroundStyle(.orange)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
 
             if let reminderID = focusManager.session.task?.reminderID {
-                HStack(spacing: 6) {
-                    Button {
-                        Task { await completeReminder(id: reminderID) }
-                    } label: {
-                        Image(systemName: completingReminder ? "hourglass" : "checkmark")
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(completingReminder ? "Saving…" : "Mark done")
-                    .help(completingReminder ? "Saving…" : "Mark done")
-                    .disabled(completingReminder || !reminderChoicesLoaded || !sessionReminderIsAvailable)
+                Button {
+                    Task { await completeReminder(id: reminderID) }
+                } label: {
+                    Image(systemName: completingReminder ? "hourglass" : "checkmark")
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(completingReminder ? "Saving…" : "Mark done")
+                .help(completingReminder ? "Saving…" : "Mark done")
+                .disabled(completingReminder || !reminderChoicesLoaded || !sessionReminderIsAvailable)
+            }
+        }
+        .font(.caption)
+        .foregroundStyle(focusManager.session.status == .completed ? .green : .secondary)
+    }
 
-                    if let reminderCompletionError {
-                        Text(reminderCompletionError)
-                            .font(.caption2)
-                            .foregroundStyle(.red)
-                            .lineLimit(2)
+    private var currentListName: String? {
+        if canEditSetup, taskSource == .reminder {
+            selectedReminder?.listName
+        } else {
+            focusManager.session.task?.listName
+        }
+    }
+
+    @ViewBuilder
+    private var toolbar: some View {
+        HStack(spacing: 8) {
+            if canEditSetup {
+                if draftMode == .countdown {
+                    Button("25") { draftMinutes = 25 }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(draftMinutes == 25 ? .primary : .secondary)
+                        .accessibilityLabel("25 minutes")
+                        .help("25 minutes")
+                    Button("50") { draftMinutes = 50 }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(draftMinutes == 50 ? .primary : .secondary)
+                        .accessibilityLabel("50 minutes")
+                        .help("50 minutes")
+                    Stepper("\(draftMinutes) min", value: $draftMinutes, in: 1...180)
+                        .font(.caption)
+                        .accessibilityLabel("Custom duration: \(draftMinutes) minutes")
+                        .help("Adjust duration from 1 to 180 minutes")
+                        .fixedSize()
+                } else {
+                    Text("\(focusManager.settings.workMinutes) min work")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Spacer(minLength: 4)
+
+            switch focusManager.session.status {
+            case .idle:
+                startButton
+            case .running:
+                iconButton("Pause focus timer", systemName: "pause.fill") {
+                    focusManager.pause()
+                }
+            case .paused:
+                iconButton("Resume focus timer", systemName: "play.fill") {
+                    focusManager.resume()
+                }
+            case .completed:
+                if focusManager.session.mode == .pomodoro {
+                    iconButton("Start the next Pomodoro phase", systemName: "arrow.right") {
+                        focusManager.advancePhase()
                     }
+                } else {
+                    startButton
+                }
+            }
+
+            if focusManager.session.status != .idle {
+                iconButton("End focus session", systemName: "stop.fill", role: .destructive) {
+                    focusManager.stop()
                 }
             }
         }
         .font(.subheadline)
     }
 
-    private var timerColumn: some View {
-        VStack(alignment: .trailing, spacing: 4) {
-            Text(String(format: "%02d:%02d", displayedSeconds / 60, displayedSeconds % 60))
-                .font(.system(size: 30, weight: .medium, design: .rounded))
-                .monospacedDigit()
-                .foregroundStyle(.white)
-                .contentTransition(.numericText())
-                .accessibilityLabel("Time remaining")
-
-            HStack(spacing: 6) {
-                Text(statusTitle)
-                    .lineLimit(1)
-                if focusManager.session.mode == .pomodoro, focusManager.session.completedWorkSessions > 0 {
-                    Text("· \(focusManager.session.completedWorkSessions)")
-                }
-            }
-            .font(.caption)
-            .foregroundStyle(focusManager.session.status == .completed ? .green : .secondary)
-
-            ProgressView(value: progress)
-                .tint(focusManager.session.status == .completed ? .green : .accentColor)
-                .frame(maxWidth: .infinity)
-                .accessibilityLabel("Focus progress")
-
-            HStack(spacing: 10) {
-                switch focusManager.session.status {
-                case .idle:
-                    startButton
-                case .running:
-                    iconButton("Pause focus timer", systemName: "pause.fill") {
-                        focusManager.pause()
-                    }
-                case .paused:
-                    iconButton("Resume focus timer", systemName: "play.fill") {
-                        focusManager.resume()
-                    }
-                case .completed:
-                    if focusManager.session.mode == .pomodoro {
-                        iconButton("Start the next Pomodoro phase", systemName: "arrow.right") {
-                            focusManager.advancePhase()
-                        }
-                    } else {
-                        startButton
-                    }
-                }
-
-                if focusManager.session.status != .idle {
-                    iconButton("End focus session", systemName: "stop.fill", role: .destructive) {
-                        focusManager.stop()
-                    }
-                }
-            }
+    private var timerCaption: String {
+        switch focusManager.session.status {
+        case .idle: draftMode == .pomodoro ? String(localized: "Pomodoro") : String(localized: "Ready")
+        case .running: statusTitle
+        case .paused: String(localized: "Paused")
+        case .completed: String(localized: "Completed")
         }
     }
 
