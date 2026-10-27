@@ -67,10 +67,6 @@ struct ContentView: View {
             && vm.notchState == .closed && Defaults[.showPowerStatusNotifications]
         {
             chinWidth = 640
-        } else if focusManager.session.status != .idle
-            && vm.notchState == .closed && !vm.hideOnClosed
-        {
-            chinWidth += (2 * closedFocusWingWidth + 2 * cornerRadiusInsets.closed.bottom)
         } else if shouldShowClosedMusicLiveActivity
         {
             chinWidth += (2 * max(0, vm.effectiveClosedNotchHeight - 12) + 20)
@@ -84,16 +80,22 @@ struct ContentView: View {
         return chinWidth
     }
 
-    private var closedFocusWingWidth: CGFloat {
-        max(60, vm.effectiveClosedNotchHeight - 12)
-    }
-
     private var shouldShowClosedMusicLiveActivity: Bool {
         (!coordinator.expandingView.show || coordinator.expandingView.type == .music)
             && vm.notchState == .closed
             && (musicManager.isPlaying || !musicManager.isPlayerIdle)
             && coordinator.musicLiveActivityEnabled
             && !vm.hideOnClosed
+    }
+
+    private var shouldShowClosedFocusTimer: Bool {
+        focusManager.session.status != .idle
+            && vm.notchState == .closed
+            && !vm.hideOnClosed
+            && !coordinator.helloAnimationRunning
+            && !(coordinator.expandingView.type == .battery && coordinator.expandingView.show
+                && Defaults[.showPowerStatusNotifications])
+            && (!coordinator.sneakPeek.show || coordinator.sneakPeek.type == .music)
     }
 
     var body: some View {
@@ -313,25 +315,6 @@ struct ContentView: View {
                       } else if coordinator.sneakPeek.show && Defaults[.inlineHUD] && (coordinator.sneakPeek.type != .music) && (coordinator.sneakPeek.type != .battery) && vm.notchState == .closed {
                           InlineHUD(type: $coordinator.sneakPeek.type, value: $coordinator.sneakPeek.value, icon: $coordinator.sneakPeek.icon, hoverAnimation: $isHovering, gestureProgress: $gestureProgress)
                               .transition(.opacity)
-                      } else if focusManager.session.status != .idle
-                          && vm.notchState == .closed && !vm.hideOnClosed
-                          && (!coordinator.sneakPeek.show || coordinator.sneakPeek.type == .music)
-                      {
-                          let leftWidth = closedFocusWingWidth
-                          let rightWidth = max(22, vm.effectiveClosedNotchHeight - 12)
-                          FocusClosedActivity(
-                              remainingSeconds: focusManager.remainingSeconds,
-                              completionNoticeVisible: focusManager.completionNoticeVisible,
-                              musicCover: musicManager.albumArt,
-                              showsMusicCover: shouldShowClosedMusicLiveActivity,
-                              leftWidth: leftWidth,
-                              centerWidth: vm.closedNotchSize.width,
-                              rightWidth: rightWidth,
-                              onOpenFocus: {
-                                  coordinator.currentView = .focus
-                                  doOpen()
-                              }
-                          )
                       } else if shouldShowClosedMusicLiveActivity {
                           MusicLiveActivity()
                               .frame(alignment: .center)
@@ -385,6 +368,20 @@ struct ContentView: View {
               .conditionalModifier((coordinator.sneakPeek.show && (coordinator.sneakPeek.type == .music) && vm.notchState == .closed && !vm.hideOnClosed && Defaults[.sneakPeekStyles] == .standard) || (coordinator.sneakPeek.show && (coordinator.sneakPeek.type != .music) && (vm.notchState == .closed))) { view in
                   view
                       .fixedSize()
+              }
+              .padding(.bottom, shouldShowClosedFocusTimer ? 18 : 0)
+              .overlay(alignment: .bottom) {
+                  if shouldShowClosedFocusTimer {
+                      FocusClosedActivity(
+                          remainingSeconds: focusManager.remainingSeconds,
+                          completionNoticeVisible: focusManager.completionNoticeVisible,
+                          onOpenFocus: {
+                              coordinator.currentView = .focus
+                              doOpen()
+                          }
+                      )
+                      .frame(height: 18)
+                  }
               }
               .zIndex(2)
             if vm.notchState == .open {

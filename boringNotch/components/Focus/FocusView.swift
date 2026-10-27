@@ -586,55 +586,30 @@ struct FocusView: View {
 struct FocusClosedActivity: View {
     let remainingSeconds: Int
     let completionNoticeVisible: Bool
-    let musicCover: NSImage
-    let showsMusicCover: Bool
-    let leftWidth: CGFloat
-    let centerWidth: CGFloat
-    let rightWidth: CGFloat
     let onOpenFocus: () -> Void
 
+    private var timeText: String {
+        String(format: "%02d:%02d", remainingSeconds / 60, remainingSeconds % 60)
+    }
+
     var body: some View {
-        HStack(spacing: 0) {
-            Button(action: onOpenFocus) {
-                HStack(spacing: 4) {
-                    Image(systemName: completionNoticeVisible ? "checkmark.circle.fill" : "timer")
-                        .font(.system(size: 10, weight: .semibold))
-                    Text(String(format: "%02d:%02d", remainingSeconds / 60, remainingSeconds % 60))
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                        .monospacedDigit()
-                        .lineLimit(1)
-                }
-                .frame(width: leftWidth)
-                .contentShape(Rectangle())
+        Button(action: onOpenFocus) {
+            HStack(spacing: 4) {
+                Image(systemName: completionNoticeVisible ? "checkmark.circle.fill" : "timer")
+                    .font(.system(size: 10, weight: .semibold))
+                Text(timeText)
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .monospacedDigit()
+                    .lineLimit(1)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Open Focus")
-            .help("Open Focus")
-
-            Rectangle()
-                .fill(.black)
-                .frame(width: centerWidth)
-
-            Group {
-                if showsMusicCover {
-                    Image(nsImage: musicCover)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: rightWidth, height: rightWidth)
-                        .clipped()
-                        .clipShape(RoundedRectangle(cornerRadius: MusicPlayerImageSizes.cornerRadiusInset.closed))
-                        .accessibilityLabel("Now playing album artwork")
-                } else {
-                    Image(systemName: "timer")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.gray)
-                        .frame(width: rightWidth)
-                        .accessibilityLabel("Focus timer active")
-                }
-            }
-            .frame(width: leftWidth)
+            .padding(.horizontal, 8)
+            .frame(height: 18)
+            .contentShape(Rectangle())
         }
-        .frame(height: 26)
+        .buttonStyle(.plain)
+        .accessibilityLabel("Open Focus")
+        .accessibilityValue(Text(timeText))
+        .help("Open Focus")
     }
 }
 
