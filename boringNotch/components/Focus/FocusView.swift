@@ -615,21 +615,24 @@ struct FocusClosedActivity: View {
                 .fill(.black)
                 .frame(width: centerWidth)
 
-            if showsMusicCover {
-                Image(nsImage: musicCover)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: rightWidth, height: rightWidth)
-                    .clipped()
-                    .clipShape(RoundedRectangle(cornerRadius: MusicPlayerImageSizes.cornerRadiusInset.closed))
-                    .accessibilityLabel("Now playing album artwork")
-            } else {
-                Image(systemName: "timer")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.gray)
-                    .frame(width: rightWidth)
-                    .accessibilityLabel("Focus timer active")
+            Group {
+                if showsMusicCover {
+                    Image(nsImage: musicCover)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: rightWidth, height: rightWidth)
+                        .clipped()
+                        .clipShape(RoundedRectangle(cornerRadius: MusicPlayerImageSizes.cornerRadiusInset.closed))
+                        .accessibilityLabel("Now playing album artwork")
+                } else {
+                    Image(systemName: "timer")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.gray)
+                        .frame(width: rightWidth)
+                        .accessibilityLabel("Focus timer active")
+                }
             }
+            .frame(width: leftWidth)
         }
         .frame(height: 26)
     }

@@ -70,7 +70,7 @@ struct ContentView: View {
         } else if focusManager.session.status != .idle
             && vm.notchState == .closed && !vm.hideOnClosed
         {
-            chinWidth += (2 * max(0, vm.effectiveClosedNotchHeight - 12) + 20)
+            chinWidth += (2 * closedFocusWingWidth + 2 * cornerRadiusInsets.closed.bottom)
         } else if shouldShowClosedMusicLiveActivity
         {
             chinWidth += (2 * max(0, vm.effectiveClosedNotchHeight - 12) + 20)
@@ -82,6 +82,10 @@ struct ContentView: View {
         }
 
         return chinWidth
+    }
+
+    private var closedFocusWingWidth: CGFloat {
+        max(60, vm.effectiveClosedNotchHeight - 12)
     }
 
     private var shouldShowClosedMusicLiveActivity: Bool {
@@ -313,7 +317,7 @@ struct ContentView: View {
                           && vm.notchState == .closed && !vm.hideOnClosed
                           && (!coordinator.sneakPeek.show || coordinator.sneakPeek.type == .music)
                       {
-                          let leftWidth = max(53, vm.effectiveClosedNotchHeight - 12)
+                          let leftWidth = closedFocusWingWidth
                           let rightWidth = max(22, vm.effectiveClosedNotchHeight - 12)
                           FocusClosedActivity(
                               remainingSeconds: focusManager.remainingSeconds,
@@ -321,7 +325,7 @@ struct ContentView: View {
                               musicCover: musicManager.albumArt,
                               showsMusicCover: shouldShowClosedMusicLiveActivity,
                               leftWidth: leftWidth,
-                              centerWidth: max(0, vm.closedNotchSize.width - leftWidth - rightWidth),
+                              centerWidth: vm.closedNotchSize.width,
                               rightWidth: rightWidth,
                               onOpenFocus: {
                                   coordinator.currentView = .focus
