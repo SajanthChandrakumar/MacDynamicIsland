@@ -192,7 +192,28 @@ struct FocusView: View {
             .frame(width: 76)
         }
         .frame(width: 90, height: 90)
-        .background(Color(nsColor: .secondarySystemFill), in: RoundedRectangle(cornerRadius: 13))
+        .background {
+            RoundedRectangle(cornerRadius: 13)
+                .fill(Color(nsColor: .secondarySystemFill))
+                .overlay {
+                    if focusManager.session.status == .running && !reduceMotion {
+                        Circle()
+                            .fill(RadialGradient(
+                                colors: [Color.accentColor.opacity(0.22), .clear],
+                                center: .center,
+                                startRadius: 0,
+                                endRadius: 40
+                            ))
+                            .frame(width: 80, height: 80)
+                            .phaseAnimator([false, true]) { glow, phase in
+                                glow.offset(x: phase ? 15 : -15, y: phase ? -8 : 8)
+                            } animation: { _ in
+                                .easeInOut(duration: 3.5)
+                            }
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 13))
+        }
     }
 
     private var timerProgressTint: Color {
