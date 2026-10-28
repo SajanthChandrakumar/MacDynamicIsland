@@ -33,6 +33,105 @@ final class FocusSessionTests: XCTestCase {
         XCTAssertEqual(session.remaining(at: start.addingTimeInterval(600)), 18, accuracy: 0.001)
     }
 
+    func testPausedRemainingEditPreservesElapsedFocusTimeInBothModes() {
+        for mode in [FocusMode.countdown, .pomodoro] {
+            var session = FocusSession.start(mode: mode, minutes: 25, at: start)
+            session.pause(at: start.addingTimeInterval(13 * 60))
+
+            session.setRemaining(minutes: 20)
+
+            XCTAssertEqual(session.status, .paused)
+            XCTAssertNil(session.anchorDate)
+            XCTAssertEqual(session.durationSeconds, 33 * 60, accuracy: 0.001)
+            XCTAssertEqual(session.remaining(at: start.addingTimeInterval(10_000)), 20 * 60, accuracy: 0.001)
+
+            let resumedAt = start.addingTimeInterval(10_000)
+            session.resume(at: resumedAt)
+            XCTAssertEqual(session.remaining(at: resumedAt.addingTimeInterval(60)), 19 * 60, accuracy: 0.001)
+        }
+    }
+
+    func testPausedRemainingEditClampsMinutesAndTotalPhaseDuration() {
+        var minimum = FocusSession.start(mode: .countdown, minutes: 25, at: start)
+        minimum.pause(at: start)
+        minimum.setRemaining(minutes: Int.min)
+        XCTAssertEqual(minimum.remaining(at: start), 60, accuracy: 0.001)
+        XCTAssertEqual(minimum.durationSeconds, 60, accuracy: 0.001)
+
+        var capped = FocusSession.start(mode: .countdown, minutes: 180, at: start)
+        capped.pause(at: start.addingTimeInterval(179 * 60))
+        capped.setRemaining(minutes: Int.max)
+        XCTAssertEqual(capped.remaining(at: start.addingTimeInterval(10_000)), 60, accuracy: 0.001)
+        XCTAssertEqual(capped.durationSeconds, 180 * 60, accuracy: 0.001)
+
+        capped.resume(at: start.addingTimeInterval(10_000))
+        capped.addFiveMinutes(at: start.addingTimeInterval(10_000))
+        XCTAssertEqual(capped.status, .running)
+        XCTAssertEqual(capped.remaining(at: start.addingTimeInterval(10_000)), 60, accuracy: 0.001)
+        XCTAssertEqual(capped.durationSeconds, 180 * 60, accuracy: 0.001)
+    }
+
+    func testRunningExtensionPreservesFractionalElapsedTime() {
+        var session = FocusSession.start(mode: .countdown, minutes: 1, at: start)
+        let extendedAt = start.addingTimeInterval(10.25)
+
+        session.addFiveMinutes(at: extendedAt)
+
+        XCTAssertEqual(session.status, .running)
+        XCTAssertEqual(session.anchorDate, extendedAt)
+        XCTAssertEqual(session.durationSeconds, 6 * 60, accuracy: 0.001)
+        XCTAssertEqual(session.remaining(at: extendedAt), 349.75, accuracy: 0.001)
+        XCTAssertEqual(session.remaining(at: extendedAt.addingTimeInterval(0.5)), 349.25, accuracy: 0.001)
+    }
+
+    func testRunningExtensionCompletesAtDeadlineInsteadOfReviving() {
+        for elapsed in [60.0, 61.0] {
+            var session = FocusSession.start(mode: .countdown, minutes: 1, at: start)
+            session.addFiveMinutes(at: start.addingTimeInterval(elapsed))
+
+            XCTAssertEqual(session.status, .completed)
+            XCTAssertEqual(session.remaining(at: start.addingTimeInterval(elapsed)), 0, accuracy: 0.001)
+            XCTAssertEqual(session.completedWorkSessions, 1)
+
+            session.addFiveMinutes(at: start.addingTimeInterval(elapsed + 10))
+            XCTAssertEqual(session.status, .completed)
+            XCTAssertEqual(session.completedWorkSessions, 1)
+        }
+    }
+
+    func testPomodoroEditRoundTripsWithoutChangingFuturePhaseDefaults() throws {
+        let settings = FocusSettings(workMinutes: 25, shortBreakMinutes: 7, longBreakMinutes: 22, longBreakInterval: 4)
+        let task = FocusTask(title: "Review draft", reminderID: "reminder-1", listName: "Work")
+        var session = FocusSession.start(mode: .pomodoro, minutes: 25, settings: settings, task: task, at: start)
+        session.tick(at: start.addingTimeInterval(1_501))
+        session.advancePhase(at: start.addingTimeInterval(1_501))
+        session.pause(at: start.addingTimeInterval(1_621))
+
+        session.setRemaining(minutes: 10)
+
+        XCTAssertEqual(session.phase, .shortBreak)
+        XCTAssertEqual(session.status, .paused)
+        XCTAssertEqual(session.remaining(at: start.addingTimeInterval(10_000)), 10 * 60, accuracy: 0.001)
+        XCTAssertEqual(session.durationSeconds, 12 * 60, accuracy: 0.001)
+        XCTAssertEqual(session.settings, settings)
+        XCTAssertEqual(session.task, task)
+        XCTAssertEqual(session.completedWorkSessions, 1)
+
+        var restored = try JSONDecoder().decode(FocusSession.self, from: JSONEncoder().encode(session))
+        XCTAssertEqual(restored, session)
+        XCTAssertEqual(restored.remaining(at: start.addingTimeInterval(20_000)), 10 * 60, accuracy: 0.001)
+
+        let resumedAt = start.addingTimeInterval(20_000)
+        restored.resume(at: resumedAt)
+        restored.tick(at: resumedAt.addingTimeInterval(10 * 60))
+        XCTAssertEqual(restored.status, .completed)
+        XCTAssertEqual(restored.completedWorkSessions, 1)
+        restored.advancePhase(at: resumedAt.addingTimeInterval(10 * 60))
+        XCTAssertEqual(restored.phase, .work)
+        XCTAssertEqual(restored.remaining(at: resumedAt.addingTimeInterval(10 * 60)), 25 * 60, accuracy: 0.001)
+        XCTAssertEqual(restored.settings, settings)
+    }
+
     func testPomodoroWaitsForManualAdvanceAndUsesLongBreakAfterFourthWork() {
         let settings = FocusSettings(workMinutes: 1, shortBreakMinutes: 1, longBreakMinutes: 2, longBreakInterval: 4)
         var session = FocusSession.start(mode: .pomodoro, minutes: 1, settings: settings, at: start)

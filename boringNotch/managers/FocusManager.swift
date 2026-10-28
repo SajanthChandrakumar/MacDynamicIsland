@@ -74,6 +74,25 @@ final class FocusManager: ObservableObject {
         persistSession()
     }
 
+    func setRemaining(minutes: Int) {
+        guard session.status == .paused else { return }
+        session.setRemaining(minutes: minutes)
+        remainingSeconds = Self.displaySeconds(session.remaining())
+        persistSession()
+    }
+
+    func addFiveMinutes() {
+        guard session.status == .running else { return }
+        let now = Date()
+        session.addFiveMinutes(at: now)
+        remainingSeconds = Self.displaySeconds(session.remaining(at: now))
+        if session.status == .completed {
+            finishPhase()
+        } else {
+            persistSession()
+        }
+    }
+
     func advancePhase() {
         guard session.nextPhase != nil else { return }
         cancelTimer()

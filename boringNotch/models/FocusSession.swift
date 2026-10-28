@@ -153,6 +153,30 @@ struct FocusSession: Codable, Equatable {
         status = .running
     }
 
+    mutating func setRemaining(minutes: Int) {
+        guard status == .paused else { return }
+        let elapsed = durationSeconds - checkpointSeconds
+        let requestedSeconds = TimeInterval(min(max(minutes, 1), 180) * 60)
+        let maximumRemaining = max(0, 180 * 60 - elapsed)
+        let remaining = min(requestedSeconds, maximumRemaining)
+        durationSeconds = elapsed + remaining
+        checkpointSeconds = remaining
+        anchorDate = nil
+    }
+
+    mutating func addFiveMinutes(at date: Date = Date()) {
+        guard status == .running else { return }
+        let currentRemaining = remaining(at: date)
+        guard currentRemaining > 0 else {
+            completePhase()
+            return
+        }
+        let extensionSeconds = min(5 * 60, max(0, 180 * 60 - durationSeconds))
+        durationSeconds += extensionSeconds
+        checkpointSeconds = currentRemaining + extensionSeconds
+        anchorDate = date
+    }
+
     mutating func advancePhase(at date: Date = Date()) {
         guard let nextPhase else { return }
         phase = nextPhase

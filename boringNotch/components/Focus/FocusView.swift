@@ -24,6 +24,11 @@ private enum FocusTaskSource: String, CaseIterable {
     }
 }
 
+private enum FocusTimeEditorTarget: Equatable {
+    case setup
+    case remaining
+}
+
 @MainActor
 struct FocusView: View {
     @EnvironmentObject private var viewModel: BoringViewModel
@@ -35,10 +40,15 @@ struct FocusView: View {
     @FocusState private var titleFieldFocused: Bool
     @State private var draftMode: FocusMode = .countdown
     @State private var draftMinutes = 25
+    @State private var draftPomodoroMinutes: Int?
     @State private var taskSource: FocusTaskSource = .none
     @State private var draftTitle = ""
     @State private var selectedReminder: FocusTask?
     @State private var showingSettings = false
+    @State private var showingTimeEditor = false
+    @State private var timeEditorMinutes = 25
+    @State private var timeEditorTarget: FocusTimeEditorTarget?
+    @State private var timeEditorSessionSnapshot: FocusSession?
     @State private var reminderChoicesLoaded = false
     @State private var completingReminder = false
     @State private var reminderCompletionError: String?
@@ -46,6 +56,14 @@ struct FocusView: View {
     private var canEditSetup: Bool {
         focusManager.session.status == .idle
             || (focusManager.session.status == .completed && focusManager.session.mode == .countdown)
+    }
+
+    private var setupMinutes: Int {
+        draftMode == .pomodoro ? (draftPomodoroMinutes ?? focusManager.settings.workMinutes) : draftMinutes
+    }
+
+    private var canEditTime: Bool {
+        canEditSetup || focusManager.session.status == .paused
     }
 
     private var newTask: FocusTask? {
@@ -82,8 +100,7 @@ struct FocusView: View {
 
     private var displayedSeconds: Int {
         guard focusManager.session.status == .idle else { return focusManager.remainingSeconds }
-        let minutes = draftMode == .pomodoro ? focusManager.settings.workMinutes : draftMinutes
-        return minutes * 60
+        return setupMinutes * 60
     }
 
     var body: some View {
@@ -99,41 +116,52 @@ struct FocusView: View {
         .onChange(of: taskSource) { _, source in
             reminderCompletionError = nil
             if source == .reminder {
-                viewModel.beginFocusInteraction()
                 loadReminderChoices()
             } else {
                 titleFieldFocused = false
             }
+            updateFocusInteraction()
         }
-        .onChange(of: titleFieldFocused) { _, focused in
-            if focused {
-                viewModel.beginFocusInteraction()
-            } else if !showingSettings {
-                viewModel.endFocusInteraction()
-            }
+        .onChange(of: titleFieldFocused) { _, _ in
+            updateFocusInteraction()
         }
         .onChange(of: showingSettings) { _, showing in
-            if showing {
-                viewModel.beginFocusInteraction()
-                if taskSource == .reminder && !reminderChoicesLoaded {
-                    loadReminderChoices()
-                }
-            } else {
+            if showing, taskSource == .reminder, !reminderChoicesLoaded {
+                loadReminderChoices()
+            } else if !showing {
                 titleFieldFocused = false
-                viewModel.endFocusInteraction()
+            }
+            updateFocusInteraction()
+        }
+        .onChange(of: showingTimeEditor) { _, showing in
+            if !showing {
+                timeEditorTarget = nil
+                timeEditorSessionSnapshot = nil
+            }
+            updateFocusInteraction()
+        }
+        .onChange(of: focusManager.session) { _, session in
+            guard showingTimeEditor else { return }
+            guard let snapshot = timeEditorSessionSnapshot,
+                  session == snapshot,
+                  durationTargetIsValid(timeEditorTarget, for: session) else {
+                dismissTimeEditor()
+                return
             }
         }
         .onChange(of: canEditSetup) { _, canEdit in
             guard !canEdit else { return }
             titleFieldFocused = false
             showingSettings = false
-            viewModel.endFocusInteraction()
+            dismissTimeEditor()
+            updateFocusInteraction()
         }
         .onChange(of: coordinator.currentView) { _, view in
             guard view != .focus else { return }
             titleFieldFocused = false
             showingSettings = false
-            viewModel.endFocusInteraction()
+            dismissTimeEditor()
+            updateFocusInteraction()
         }
         .task {
             guard focusManager.session.task?.reminderID != nil else { return }
@@ -144,34 +172,59 @@ struct FocusView: View {
         .onDisappear {
             titleFieldFocused = false
             showingSettings = false
-            viewModel.endFocusInteraction()
+            dismissTimeEditor()
+            updateFocusInteraction()
         }
     }
 
     private var timerColumn: some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text(String(format: "%02d:%02d", displayedSeconds / 60, displayedSeconds % 60))
-                .font(.system(size: 44, weight: .medium, design: .rounded))
-                .monospacedDigit()
-                .minimumScaleFactor(0.82)
-                .lineLimit(1)
-                .contentTransition(.numericText())
-                .opacity(focusManager.completionNoticeVisible ? 0 : 1)
-                .overlay {
-                    if focusManager.completionNoticeVisible {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 40, weight: .medium))
-                            .foregroundStyle(.green)
-                            .accessibilityHidden(true)
-                    }
-                }
-                .accessibilityLabel("Time remaining")
+            timerControl
 
             Text(timerCaption)
                 .font(.caption)
                 .foregroundStyle(focusManager.session.status == .completed ? .green : .secondary)
                 .lineLimit(1)
         }
+    }
+
+    @ViewBuilder
+    private var timerControl: some View {
+        if canEditTime {
+            Button(action: toggleTimeEditor) {
+                timerDisplay
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(timeAccessibilityLabel)
+            .accessibilityValue(displayedTime)
+            .help(timeAccessibilityLabel)
+            .popover(isPresented: $showingTimeEditor, arrowEdge: .bottom) {
+                timeEditor
+            }
+        } else {
+            timerDisplay
+                .accessibilityLabel("Time remaining")
+                .accessibilityValue(displayedTime)
+        }
+    }
+
+    private var timerDisplay: some View {
+        Text(displayedTime)
+            .font(.system(size: 44, weight: .medium, design: .rounded))
+            .monospacedDigit()
+            .minimumScaleFactor(0.82)
+            .lineLimit(1)
+            .contentTransition(.numericText())
+            .opacity(focusManager.completionNoticeVisible ? 0 : 1)
+            .overlay {
+                if focusManager.completionNoticeVisible {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 40, weight: .medium))
+                        .foregroundStyle(.green)
+                        .accessibilityHidden(true)
+                }
+            }
+            .contentShape(Rectangle())
     }
 
     private var detailsColumn: some View {
@@ -218,7 +271,7 @@ struct FocusView: View {
         let mode = canEditSetup ? draftMode : focusManager.session.mode
         let minutes: Int
         if canEditSetup {
-            minutes = mode == .pomodoro ? focusManager.settings.workMinutes : draftMinutes
+            minutes = setupMinutes
         } else {
             minutes = max(1, Int((focusManager.session.durationSeconds / 60).rounded()))
         }
@@ -274,41 +327,6 @@ struct FocusView: View {
         .labelsHidden()
         .accessibilityLabel("Focus mode")
         .disabled(!canEditSetup)
-    }
-
-    @ViewBuilder
-    private var durationConfiguration: some View {
-        if draftMode == .countdown {
-            HStack(spacing: 8) {
-                Text("Duration")
-                    .font(.callout)
-                Spacer(minLength: 2)
-                Button("25") { draftMinutes = 25 }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(draftMinutes == 25 ? .primary : .secondary)
-                    .accessibilityLabel("25 minutes")
-                    .help("25 minutes")
-                Button("50") { draftMinutes = 50 }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(draftMinutes == 50 ? .primary : .secondary)
-                    .accessibilityLabel("50 minutes")
-                    .help("50 minutes")
-                Stepper("\(draftMinutes) min", value: $draftMinutes, in: 1...180)
-                    .font(.caption)
-                    .accessibilityLabel("Custom duration: \(draftMinutes) minutes")
-                    .help("Adjust duration from 1 to 180 minutes")
-                    .fixedSize()
-            }
-        } else {
-            HStack {
-                Text("Work length")
-                    .font(.callout)
-                Spacer()
-                Text("\(focusManager.settings.workMinutes) min")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-            }
-        }
     }
 
     private var taskConfiguration: some View {
@@ -410,15 +428,56 @@ struct FocusView: View {
                 modePicker
             }
 
-            durationConfiguration
-
-            Divider()
-
             taskConfiguration
         }
         .padding(12)
         .frame(width: 300, alignment: .topLeading)
         .frame(minHeight: 90)
+    }
+
+    private var timeEditor: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(timeEditorTarget == .some(.remaining) ? "Remaining time" : "Focus duration")
+                .font(.headline)
+
+            HStack(spacing: 8) {
+                Button("25") { timeEditorMinutes = min(25, timeEditorMaximumMinutes) }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(timeEditorMinutes == 25 ? .primary : .secondary)
+                    .disabled(timeEditorMaximumMinutes < 25)
+                    .accessibilityLabel("25 minutes")
+                    .help("25 minutes")
+                Button("50") { timeEditorMinutes = min(50, timeEditorMaximumMinutes) }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(timeEditorMinutes == 50 ? .primary : .secondary)
+                    .disabled(timeEditorMaximumMinutes < 50)
+                    .accessibilityLabel("50 minutes")
+                    .help("50 minutes")
+                Stepper(
+                    "\(timeEditorMinutes) min",
+                    value: $timeEditorMinutes,
+                    in: 1...timeEditorMaximumMinutes
+                )
+                .font(.caption)
+                .accessibilityLabel("Custom duration: \(timeEditorMinutes) minutes")
+                .help("Adjust duration from 1 to \(timeEditorMaximumMinutes) minutes")
+                .fixedSize()
+            }
+
+            Divider()
+
+            HStack {
+                Spacer()
+                Button("Cancel") { dismissTimeEditor() }
+                    .buttonStyle(.plain)
+                Button("Apply", action: applyTimeEdit)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(12)
+        .frame(width: 260, alignment: .topLeading)
     }
 
     @ViewBuilder
@@ -440,6 +499,15 @@ struct FocusView: View {
             case .idle:
                 startButton
             case .running:
+                Button("+5 min") {
+                    focusManager.addFiveMinutes()
+                }
+                .buttonStyle(.plain)
+                .font(.caption)
+                .help("Add five minutes to the running focus timer")
+                .accessibilityLabel("Add five minutes")
+                .disabled(focusManager.session.durationSeconds >= 180 * 60)
+
                 iconButton("Pause focus timer", systemName: "pause.fill") {
                     focusManager.pause()
                 }
@@ -475,8 +543,12 @@ struct FocusView: View {
             if showingSettings {
                 showingSettings = false
             } else {
-                viewModel.beginFocusInteraction()
+                showingTimeEditor = false
+                timeEditorTarget = nil
+                timeEditorSessionSnapshot = nil
+                titleFieldFocused = false
                 showingSettings = true
+                updateFocusInteraction()
             }
         } label: {
             Image(systemName: "slider.horizontal.3")
@@ -504,9 +576,109 @@ struct FocusView: View {
         iconButton("Start focus timer", systemName: "play.fill") {
             focusManager.start(
                 mode: draftMode,
-                minutes: draftMode == .pomodoro ? focusManager.settings.workMinutes : draftMinutes,
+                minutes: setupMinutes,
                 task: newTask
             )
+            if draftMode == .pomodoro {
+                draftPomodoroMinutes = nil
+            }
+        }
+    }
+
+    private var displayedTime: String {
+        String(format: "%02d:%02d", displayedSeconds / 60, displayedSeconds % 60)
+    }
+
+    private var timeAccessibilityLabel: LocalizedStringKey {
+        switch focusManager.session.status {
+        case .idle: "Edit focus duration"
+        case .paused: "Edit remaining time"
+        case .completed where canEditSetup: "Edit focus duration"
+        case .running, .completed: "Time remaining"
+        }
+    }
+
+    private var timeEditorMaximumMinutes: Int {
+        guard timeEditorTarget == .some(.remaining) else { return 180 }
+        let elapsedSeconds = max(0, focusManager.session.durationSeconds - TimeInterval(focusManager.remainingSeconds))
+        return max(1, min(180, Int(floor((180 * 60 - elapsedSeconds) / 60))))
+    }
+
+    private func toggleTimeEditor() {
+        guard canEditTime else { return }
+        guard !showingTimeEditor else {
+            dismissTimeEditor()
+            return
+        }
+
+        let target: FocusTimeEditorTarget
+        if canEditSetup {
+            target = .setup
+        } else if focusManager.session.status == .paused {
+            target = .remaining
+        } else {
+            return
+        }
+
+        timeEditorTarget = target
+        timeEditorSessionSnapshot = focusManager.session
+        switch target {
+        case .setup:
+            timeEditorMinutes = setupMinutes
+        case .remaining:
+            let roundedRemainingMinutes = max(1, (focusManager.remainingSeconds + 59) / 60)
+            timeEditorMinutes = min(roundedRemainingMinutes, timeEditorMaximumMinutes)
+        }
+
+        titleFieldFocused = false
+        showingSettings = false
+        showingTimeEditor = true
+        updateFocusInteraction()
+    }
+
+    private func applyTimeEdit() {
+        guard let target = timeEditorTarget,
+              let snapshot = timeEditorSessionSnapshot,
+              focusManager.session == snapshot,
+              durationTargetIsValid(target, for: focusManager.session) else {
+            dismissTimeEditor()
+            return
+        }
+
+        switch target {
+        case .setup:
+            if draftMode == .pomodoro {
+                draftPomodoroMinutes = timeEditorMinutes
+            } else {
+                draftMinutes = timeEditorMinutes
+            }
+        case .remaining:
+            focusManager.setRemaining(minutes: timeEditorMinutes)
+        }
+        dismissTimeEditor()
+    }
+
+    private func durationTargetIsValid(_ target: FocusTimeEditorTarget?, for session: FocusSession) -> Bool {
+        switch target {
+        case .some(.setup):
+            session.status == .idle || (session.status == .completed && session.mode == .countdown)
+        case .some(.remaining): session.status == .paused
+        case .none: false
+        }
+    }
+
+    private func dismissTimeEditor() {
+        showingTimeEditor = false
+        timeEditorTarget = nil
+        timeEditorSessionSnapshot = nil
+        updateFocusInteraction()
+    }
+
+    private func updateFocusInteraction() {
+        if showingSettings || showingTimeEditor || titleFieldFocused {
+            viewModel.beginFocusInteraction()
+        } else {
+            viewModel.endFocusInteraction()
         }
     }
 
